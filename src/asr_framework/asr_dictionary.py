@@ -1,20 +1,16 @@
 # definit les objet lemma et dictionary
 import csv
+import os
 from operator import itemgetter, attrgetter
-from mpearl_lib.asr_persistent import *
-from mpearl_lib.asr_constantes import *
 from difflib import SequenceMatcher
 from math import log
 from numpy import linalg
 
-mp_similarityLimit_forAttractivity=0.6
-mp_dictionary_romeOnisep=dict()
+# from asr_persistent import *
+from .asr_utils import asr_strip_accents
 
+asr_similarityLimit_forAttractivity=0.6
 
-
-def asr_strip_accents(s):
-    return ''.join(c for c in unicodedata.normalize('NFD', s)
-                   if unicodedata.category(c) != 'Mn')
 class asr_token:
     def __init__(self,libelle,load_full_data=False):
         self.text=libelle.lower()
@@ -27,7 +23,7 @@ class asr_token:
         if load_full_data==False:
             #creation d'un token
             self.length=len(self.text)
-            self.woaccent=''.join(c for c in unicodedata.normalize('NFD', libelle.lower()) if unicodedata.category(c) != 'Mn')
+            self.woaccent=asr_strip_accents(libelle.lower())
             if self.woaccent != self.text:
                 self.letters="".join(set(self.woaccent))
             else:
@@ -49,7 +45,7 @@ class asr_token:
     def __repr__(self):
             return repr((self.text, self.count, self.documents_count, self.idf,self.length,self.letters,self.letters_number))
 
-    def COMPUTE_ATTRACTIVITY(self,gensim_model,default_similarity_floor=mp_similarityLimit_forAttractivity,max_wordsToScan=1000):
+    def COMPUTE_ATTRACTIVITY(self,gensim_model,default_similarity_floor=asr_similarityLimit_forAttractivity,max_wordsToScan=1000):
         if (self.text in gensim_model.wv.key_to_index) and (self.attractivity is None):
             lscore = 1
             minwords = 40
@@ -65,7 +61,7 @@ class asr_token:
         return self.attractivity
 
     def IS_LETTERS_DOUBLED(self):
-        if self.letters.__len__()<4:
+        if self.letters.__len__()<8:
             return False
         if (set(self.text)==set(self.text[::2])) or (set(self.text)==set(self.text[::3])):
             return True
@@ -73,7 +69,7 @@ class asr_token:
             return False
 
 class asr_dictionary:
-    def __init__(self,file=None,load_dynamic_rules=False,datas_folder=None):
+    def __init__(self,file=None,load_dynamic_rules=True,datas_folder=None):
         # self.dictionary=[]
         self.index=0
         self.tokens=dict()
@@ -112,7 +108,9 @@ class asr_dictionary:
         with open(file_to_open, newline='\n',encoding="utf-8") as csvfile:
             csv_dict = csv.reader(csvfile, delimiter=',', quotechar='\"')
             for line in csv_dict:
-                new_word=mp_token(line[0],load_full_data=True)
+                if line[0][0]=="#":
+                    continue
+                new_word=asr_token(line[0],load_full_data=True)
                 new_word.woaccent=line[1]
                 new_word.count=int(line[2])
                 new_word.documents_count=int(line[3])
@@ -120,7 +118,7 @@ class asr_dictionary:
                 new_word.length=int(line[5])
                 new_word.letters = line[6]
                 new_word.letters_number = int(line[7])
-                new_word.inFrenchVocab= True if line[8]=="IFV" else False
+                new_word.inFrenchVocab= True if (line[8]=="IFV" or line[8]=="ISV") else False
                 # new_word.inSpacyVocab= True if line[8]=="ISV" else False
                 if len(line)>9:
                     if line[9]=='None':
@@ -159,7 +157,7 @@ class asr_dictionary:
                 csv_dict = csv.reader(csvfile, delimiter=',', quotechar='\"')
                 for line in csv_dict:
                     self.dynamic_rules[line[0]] = line[1]
-                    self.dynamic_rules_tokens[line[0]]=mp_token(line[0])
+                    self.dynamic_rules_tokens[line[0]]=asr_token(line[0])
             self.dynamic_rules_loaded = True
         else:
             return
@@ -218,7 +216,6 @@ class asr_dictionary:
     def BUILD_SIMILARITY_SEQUENCE(self, gensimModel):
         if self.similarity_first_word is None:
             return False
-
         size = len(gensimModel.wv.key_to_index)
         self.similarity_sequence=[self.similarity_first_word]
         sequence_set= set(self.similarity_sequence)
@@ -254,7 +251,7 @@ class asr_dictionary:
             asr_save_doc(file_to_open,[ligne])
             return True
         except:
-            print_log("ERROR: could not save dictionary similarity sequence from file")
+            print_log("ERROR: could not save dictionary similarity sequence to file")
             return False
 
     def LOAD_SIMILARITY_SEQUENCE(self,file_name):
@@ -275,7 +272,7 @@ class asr_dictionary:
             return False
 
 
-    def BUILD_ATTRACTIVITY(self,gensim_model,default_similarity_floor=mp_similarityLimit_forAttractivity,max_wordsToScan=1000):
+    def BUILD_ATTRACTIVITY(self,gensim_model,default_similarity_floor=asr_similarityLimit_forAttractivity,max_wordsToScan=1000):
         for token in self.tokens.values():
             if token.text in gensim_model.wv.key_to_index:
                 token.COMPUTE_ATTRACTIVITY(gensim_model,
