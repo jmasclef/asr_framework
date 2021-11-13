@@ -122,3 +122,11 @@ def asr_listsSubstraction(listA:list, listB_to_substract:list):
             local_listA.remove(element)
     return local_listA
 
+def asr_concat_doc(line_of_words_list: list[str],end_line_carac=" ") :
+    # if len(doc)==0:
+    #     return ""
+    # new_doc=doc[0]
+    # for line in doc[1:]:
+    #     new_doc=new_doc+end_line_carac+line
+    # return  new_doc
+    return end_line_carac.join(line_of_words_list)

@@ -1,4 +1,3 @@
-import re
 import json
 import collections
 from operator import itemgetter
@@ -10,52 +9,10 @@ import gensim
 from .asr_constantes import *
 from .asr_dictionary import asr_dictionary,asr_trackRuleTarget
 from .asr_utils import asr_strip_accents
+from .asr_regex_filters import *
+from .asr_tokenisation import asr_filter_stopwords, asr_cleanTokenize_doc
+asr_similarityLimit_forAggregation=0.5  #score minimum d'aggrégation thématique entre mots pour qu'ils soient associés à un même thème
 
-asr_similarityLimit_forAggregation=0.5
-asr_regex_keepFilteredCharacters=re.compile("[^A-Za-z0-9'&µç_ùûüÿàâæçéèêëïîôœ-]+")
-asr_regex_keepOnlytLetters=re.compile("[^A-Za-z'&µç_ùûüÿàâæçéèêëïîôœ-]+")
-asr_regex_keepOnlyNumbers=re.compile("\D")
-asr_regex_isValidEmailAdress=re.compile("^.+@(\[?)[a-zA-Z0-9-.]+.([a-zA-Z]{2,3}|[0-9]{1,3})(]?)$")
-asr_regex_cid=re.compile('cid[0-99]')
-jm_regex_parenthesis=re.compile('\(.+\)')
-jm_regex_brackets=re.compile('\[.+\]')
-
-asr_cleanRule_miseEnBlanks = [",", "  ", "", "◆", "(", ")", "\f", "", "►", "►", "", "", "", "■", "▪", "", "", "", "",
-                             "", "➢", "\x02", "\xa0", "\u0000", "\u0004", "\t", "", "·",
-                             "—", "–", "◦", "❖", "", "", "<", ">", ">", "›", "", "‐", "✓", "●", "", "•", "", "",
-                             "", "*", "=", "", "",
-                             "", "", "", "", "", "", "", "", "❑", "▫", "−", "ø", "→", "§", "¤", "|", "|", "{",
-                             "}", "", " etc ", "", "", "", "✔",
-                             "★", "✩", "", "- ", " -", "", "☎", "", "", "℡", "", "", "", "", "", "", "",
-                             "", "", "", "", "", "", "",
-                             "", "", "☆", "", "", "", "", "✰", "", "", "", "",
-                             "[réf. nécessaire]"]
-
-asr_cleanRule_suppressions = ["“", "”", "\"", "«", "»", "%"]  # ,"-"]
-
-asr_cleanRule_remplacementsSections = [("...", " asr_eop_asr "), ("…", " asr_eop_asr "),
-                                      (". ", " asr_eop_asr "), (".\n", " asr_eop_asr asr_eol_asr "), (".", " "),
-                                      ("?", " asr_eop_asr "), ("!", " asr_eop_asr "),
-                                      ("\n\n", " asr_eos_asr "), ("asr_eop_asr asr_eos_asr", "asr_eos_asr"),
-                                      ("\n", " asr_eol_asr "),
-                                      ("asr_eol_asr asr_eol_asr", "asr_eos_asr"), ("asr_eop_asr asr_eop_asr", "asr_eop_asr"),
-                                      ("asr_eos_asr asr_eos_asr", "asr_deos_asr"), ("asr_eos_asr asr_eol_asr", "asr_deos_asr"),
-                                      ('asr_deos_asr asr_eos_asr','asr_deos_asr'),('asr_deos_asr asr_deos_asr','asr_deos_asr'),
-                                      ("asr_eol_asr asr_eos_asr", "asr_deos_asr"), ("asr_eop_asr", " "),
-                                      ("asr_eol_asr", " ")]  # ,("asr_eol_asr"," "),("asr_eos_asr"," ")]
-
-asr_cleanRule_remplacements = [
-    # ("/", "-"), ("#","_sharp"),("+","_plus"),
-    ("’", "'"), ("´", "'"), ("‘", "'"), ("''", "'"),
-    # ("--", "-"), ("²", "2"),
-    ("Œ", "oe"), ("œ", "oe"), ("æ", "ae"), ("__", "_"),
-    (",,", " "), #wiki
-    ("\r", "\n"), ("\n.", "\n"),
-    ("\u2029", "\n"), ("\u2028", "\n"), ("\x85", "\n"), ("\x1e", "\n"), ("\x1d", "\n"),
-    (" \n", "\n"), ("\n ", "\n"), ("\no ", "\n"),
-    (" \n", "\n"), ("\n-", "\n"), ("-\n", "\n"),
-    ("av. j.-c", "avant-jesus-christ"),("ap. j.-c", "après-jesus-christ"),("apr. j.-c", "après-jesus-christ")
-    ]
 
 class asr_topic():
     def __init__(self,words_list=None, useJSONDump=None):
@@ -670,169 +627,6 @@ class asr_sentence():
         self.PREPARE_TO_MIGRATE()
 
 
-def asr_cleanTokenize_doc(document, keep_empty_line=False,fill_with_section_markups=False,export_mails=False):
-
-    #applique à un document ou à un tableau de documents
-
-    if isinstance(document,list):
-        isString = False
-        if fill_with_section_markups:
-            document = MARKUP_EOL.join(document)
-            document = [document]
-    else:
-        isString=True
-        document=[document]
-
-    new_document=[]
-    for contenu in document:
-        contenu = contenu.lower()
-        contenu = asr_clean_string(contenu, fill_with_section_markups)
-
-        contenu=contenu.split()
-        contenu=asr_tokenize_splittedResume(contenu)
-
-        if not keep_empty_line and len(contenu)==0:
-            continue
-
-        contenu=" ".join(contenu)
-
-        new_document.append(contenu)
-
-
-    if isString or fill_with_section_markups:
-        new_document = " ".join(new_document)
-        # if isString:
-        #     new_document=" ".join(new_document)
-        # if fill_with_section_markups:
-        #     new_document = MARKUP_EOL.join(new_document)
-    return new_document
-
-def asr_clean_string(contenu,fill_with_section_markups=False):
-
-    contenu = jm_extract_brackets_content(contenu)  # supprime les contenus (*****)
-    contenu = jm_extract_brackets_content(contenu,opening_car='[',closing_car=']')  # supprime les contenus (*****)
-
-    for (expression, remplacement) in asr_cleanRule_remplacements:
-        while contenu.find(expression) >= 0:
-            contenu = contenu.replace(expression, remplacement)
-
-    for expression in asr_cleanRule_miseEnBlanks:
-        while contenu.find(expression) >= 0:
-            contenu = contenu.replace(expression, " ")
-
-    for expression in asr_cleanRule_suppressions:
-        while contenu.find(expression) >= 0:
-            contenu = contenu.replace(expression, "")
-
-    for (expression, remplacement) in asr_cleanRule_remplacements:
-        while contenu.find(expression) >= 0:
-            contenu = contenu.replace(expression, remplacement)
-
-    if fill_with_section_markups:
-        for (expression, remplacement) in asr_cleanRule_remplacementsSections:
-            while expression in contenu:
-                contenu = contenu.replace(expression, remplacement)
-    else:
-        while '\\n' in contenu:
-            contenu = contenu.replace('\\n', ' ')
-        while '\n' in contenu:
-            contenu = contenu.replace('\n', ' ')
-    # attention traitement conditionnel des points plus en amont, ceux qui ont survécu sont remplacés par des blancs
-    contenu=contenu.replace('.',' ')
-
-    contenu = " ".join(contenu.split())
-    return contenu
-
-def asr_concat_doc(doc,end_line_carac=" "):
-    if len(doc)==0:
-        return ""
-    new_doc=doc[0]
-    for line in doc[1:]:
-        new_doc=new_doc+end_line_carac+line
-    return  new_doc
-
-def asr_tokenize_splittedResume(splittedResume):
-    new_resume = []
-
-    for word in splittedResume:
-        if len(word) < MIN_WORD_LENGTH:
-            continue
-        if "@" in word:
-            if asr_regex_isValidEmailAdress.sub("", word) == '':
-                continue
-        if "€" in word:
-            continue
-        try:
-            if word[:3]=="www" or word[:4] == "cid:":
-                continue
-            if word[:3] in {"qu'"}:
-                if len(word)>3:
-                    word=word[3:]
-                else:
-                    continue
-        except:
-            pass
-        try:
-            while word[:1] in {".", "-", "'"}:
-                word = word[1:]
-            while word[-1:] in {".", "-", "'"}:
-                word = word[:-1]
-        except:
-            pass
-        try:
-            if word[:2] in {"l'", "j'", "d'", "t'", "m'", "s'", "c'", "n'"}:
-                if len(word) > 2:
-                    word = word[2:]
-                else:
-                    continue
-        except:
-            pass
-        word = asr_regex_keepFilteredCharacters.sub('', word)   #ne garde que les lettres, chiffres et qlq caracteres
-        word_keepOnlyNumbers = asr_regex_keepOnlyNumbers.sub("", word)
-        # word_keepOnlyLetters = asr_regex_keepOnlytLetters.sub("", word)
-        if len(word) < MIN_WORD_LENGTH:
-            continue
-        if word_keepOnlyNumbers == word:  # c'est un nombre pur
-            continue
-        # if word_keepOnlyLetters == "_plus":  # c'est un +33 par ex
-        #     continue
-        # if word_keepOnlyLetters == "_sharp":  # c'est un #5 par ex
-        #     continue
-        # if asr_regex_cid.sub('', word)=='':  # c'est un CID
-        #     continue
-
-        # if (len(word)>=5) and (len(word_keepOnlyNumbers)>len(word_keepOnlyLetters)):    #mix de chiffres et de lettres
-        #         continue
-
-        new_resume.append(word)
-
-    return new_resume
-
-
-def asr_filter_stopwords(resume:list,filter_section_markups=True):
-
-    if filter_section_markups:
-        stop_words_custom_list=FRENCH_STOPWORDS_LIST_W_MARKUPS
-    else:
-        stop_words_custom_list=FRENCH_STOPWORDS_LIST_WO_MARKUPS
-
-
-    new_resume = [word for word in resume if (word.lower() not in stop_words_custom_list) and not asr_isComposedWithStopwordsOrNumbers(word.lower())]
-    # new_resume = [word for word in resume.split() if (word.lower() not in stop_words_custom_list) and not asr_isComposedWithStopwordsOrNumbers(word.lower())]
-    # new_resume=" ".join(new_resume)
-    return new_resume
-
-def asr_filter_sectionsMarkups(resume):
-    return " ".join([word for word in resume.split() if word not in RESUME_SECTIONS_MARKUPS])
-
-def asr_isComposedWithStopwordsOrNumbers(word):
-    if "-" not in word and "&" not in word and "/" not in word:
-        return False
-    word=word.replace('&','-').replace('/','-')
-    words=word.split('-')
-    areStopWords=all([(word in FRENCH_STOPWORDS_LIST_WO_MARKUPS) or (asr_regex_keepOnlyNumbers.sub("", word)==word) for word in words])
-    return areStopWords
-
 def asr_apply_static_rules(sentence_to_analyse,asr_dictionary):
 
     new_sentence=sentence_to_analyse.lower()
@@ -860,7 +654,6 @@ def asr_apply_dynamic_rules(sentence_to_analyse,dictionary):
 
     # new_sentence=" ".join(new_sentence)
     return new_sentence
-
 
 def asr_dealWithOOV(filtered_sentence:list,oov_sentence:list,final_gensim_model, dictionary,filter_section_markups=True):
     """
@@ -921,8 +714,6 @@ def asr_dealWithOOV(filtered_sentence:list,oov_sentence:list,final_gensim_model,
 
     # new_sentence = " ".join(new_sentence)
     return (new_sentence,missing_words_oovmodel)
-
-
 
 def asr_classeUsage(mots,fmodel,dictionary,score_limit_aggregation=asr_similarityLimit_forAggregation,min_group_size=3,similarity_window_width=0.2, break_wo_polysemy=False, logging=False, max_words_scan=200):
     words_list=[]
@@ -1066,8 +857,6 @@ def asr_classeUsage(mots,fmodel,dictionary,score_limit_aggregation=asr_similarit
 
     return groupes
 
-
-
 def asr_migrateSentencePreparation(sentence_to_change: list, dictionary: asr_dictionary, model: gensim.models.Word2Vec):
     window_length_step1 = 2
     window_length_step2 = 4
@@ -1116,7 +905,6 @@ def asr_migrateSentencePreparation(sentence_to_change: list, dictionary: asr_dic
         else:
             new_sentence.append(word)
     return new_sentence
-
 
 def asr_migrateSentence(sentence_to_change: asr_sentence, reference_sentence: asr_sentence, dictionary: asr_dictionary, model: gensim.models.Word2Vec,
                        fast_and_approximate_migration=False):
@@ -1195,7 +983,6 @@ def asr_migrateSentence(sentence_to_change: asr_sentence, reference_sentence: as
         else:
             new_sentence.append(groupeDeclinaisons)
     return new_sentence
-
 def asr_extractBagOfWords(sentence_list, center, window_length):
     start = max(0, (center - int(window_length / 2)))
     stop = min(len(sentence_list) - 1, center + int(window_length / 2))
