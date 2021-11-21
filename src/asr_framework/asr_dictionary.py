@@ -3,12 +3,13 @@ import csv
 import os
 from operator import itemgetter, attrgetter
 from difflib import SequenceMatcher
+from csv import reader as csv_reader
 from math import log
 from numpy import linalg
 
-# from asr_persistent import *
-from .asr_utils import asr_strip_accents
-
+from asr_framework.asr_constantes import *
+from asr_framework.asr_utils import asr_strip_accents
+from asr_framework.asr_persistent import asr_load_csv_rules, asr_save_doc
 asr_similarityLimit_forAttractivity=0.6
 
 class asr_token:
@@ -69,14 +70,14 @@ class asr_token:
             return False
 
 class asr_dictionary:
-    def __init__(self,file=None,load_dynamic_rules=True,datas_folder=None):
+    def __init__(self,file_name=None,load_dynamic_rules=True,base_dir=None):
         # self.dictionary=[]
         self.index=0
         self.tokens=dict()
         self.static_rules_tokens=dict()
         self.dynamic_rules_tokens=dict()
-        self.base_dir = None                    #version calculée sur la base ou non de datas_folder
-        self.datas_folder = datas_folder        #version originale de l'info pour distinguer le paramétrage automatique
+        self.base_dir = None                    #version calculée sur la base ou non de base_dir
+        self.base_dir = base_dir        #version originale de l'info pour distinguer le paramétrage automatique
         self.static_rules_loaded=False
         self.dynamic_rules_loaded = False
         self.commonUsesRules_loaded=False
@@ -92,72 +93,68 @@ class asr_dictionary:
         # self.linearized_tf_idf_index= dict()
         # self.linerization_preparation=False
 
-        if datas_folder is None:
+        if base_dir is None:
             # self.base_dir=os.path.basename(os.getcwd())
             self.base_dir=os.getcwd() + "\\"
         else:
-            if datas_folder[-1]=="\\":
-                self.base_dir = datas_folder
+            if base_dir[-1]=="\\":
+                self.base_dir = base_dir
             else:
-                self.base_dir = datas_folder + "\\"
+                self.base_dir = base_dir + "\\"
 
-        if file is None:
+        if file_name is None:
             return
 
-        file_to_open=self.base_dir+file
+        file_to_open=self.base_dir+file_name
         with open(file_to_open, newline='\n',encoding="utf-8") as csvfile:
             csv_dict = csv.reader(csvfile, delimiter=',', quotechar='\"')
             for line in csv_dict:
                 if line[0][0]=="#":
                     continue
-                new_word=asr_token(line[0],load_full_data=True)
-                new_word.woaccent=line[1]
-                new_word.count=int(line[2])
-                new_word.documents_count=int(line[3])
-                new_word.idf=float(line[4])
-                new_word.length=int(line[5])
-                new_word.letters = line[6]
-                new_word.letters_number = int(line[7])
-                new_word.inFrenchVocab= True if (line[8]=="IFV" or line[8]=="ISV") else False
-                # new_word.inSpacyVocab= True if line[8]=="ISV" else False
+                new_token=asr_token(line[0],load_full_data=True)
+                new_token.woaccent=line[1]
+                new_token.count=int(line[2])
+                new_token.documents_count=int(line[3])
+                new_token.idf=float(line[4])
+                new_token.length=int(line[5])
+                new_token.letters = line[6]
+                new_token.letters_number = int(line[7])
+                new_token.inFrenchVocab= True if (line[8]=="IFV" or line[8]=="ISV") else False
+                # new_token.inSpacyVocab= True if line[8]=="ISV" else False
                 if len(line)>9:
                     if line[9]=='None':
-                        new_word.attractivity = None
+                        new_token.attractivity = None
                     else:
-                        new_word.attractivity=float(line[9])
+                        new_token.attractivity=float(line[9])
                 if len(line)>10:
                     if line[10]=='None':
-                        new_word.frequency = None
+                        new_token.frequency = None
                     else:
-                        new_word.frequency= float(line[10])
+                        new_token.frequency= float(line[10])
                 if len(line)>11:
                     if line[11]=='None':
-                        new_word.precision = None
+                        new_token.precision = None
                     else:
-                        new_word.precision= float(line[11])
-                self.tokens[new_word.text]=new_word
+                        new_token.precision= float(line[11])
                 if self.similarity_first_word is None:
-                    self.similarity_first_word= new_word.text
+                    #Garde le premier mot en point d'entrée pour la chaîne de similarités
+                    self.similarity_first_word= new_token.text
+                self.tokens[new_token.text]=new_token
 
-        file_to_open = self.base_dir + "static_rules.csv"
-        with open(file_to_open, newline='\n', encoding="utf-8") as csvfile:
-            csv_dict = csv.reader(csvfile, delimiter=',', quotechar='\"')
-            for line in csv_dict:
-                if line[0] != line[1]:
-                    self.static_rules[line[0]] = line[1]
-                    self.static_rules_tokens[line[0]] = asr_token(line[0])
-                else:
-                    print_log("ERROR: STATIC_RULES.CSV: same word " + line[0])
-        self.static_rules_loaded = True
+        try:
+            self.static_rules = asr_load_csv_rules(file_name=CTE_FILENAME_STATIC_RULES,base_dir=self.base_dir)
+            self.static_rules_loaded = True
+        except Exception as error:
+            self.static_rules_loaded = False
+            func_name=__name__+'.'+'__init__'
+            error_msg= "{0}: Le chargement de static_rules a échoué: {1}".format(func_name,error)
+            asr_logger.warning("{0}: Le chargement de static_rules a échoué: {1}".format(func_name,error))
+            asr_logger.warning(("ATTENTION - Le dictionnaire chargé aura ses static_rules vides !"))
+            self.static_rules = dict()
+
 
         if load_dynamic_rules:
-            self.dynamic_rules = dict()
-            file_to_open = self.base_dir + "dynamic_rules.csv"
-            with open(file_to_open, newline='\n', encoding="utf-8") as csvfile:
-                csv_dict = csv.reader(csvfile, delimiter=',', quotechar='\"')
-                for line in csv_dict:
-                    self.dynamic_rules[line[0]] = line[1]
-                    self.dynamic_rules_tokens[line[0]]=asr_token(line[0])
+            self.dynamic_rules = asr_load_csv_rules(base_dir=self.base_dir,file_name=CTE_FILENAME_DYNAMIC_RULES)
             self.dynamic_rules_loaded = True
         else:
             return
@@ -187,26 +184,29 @@ class asr_dictionary:
         else:
             return None
 
-    def SAVE_TO_FILE(self,file):
-        file_to_open = self.base_dir + file
-        f=open(file_to_open,"w",encoding="utf_8")
-        values=[lemma for lemma in self.tokens.values()]
-        values.sort(key=attrgetter('count'),reverse=True)
-        for lemma in values:
-            idf=str(lemma.idf)
-            if lemma.frequency is None:
-                frequency='None'
-            else:
-                frequency = str(lemma.frequency)
-                frequency=frequency[0:8]
-            # if lemma.woaccent!='':
-            #     lemma.letters="".join(set(lemma.woaccent))
-            inFrenchVocab="IFV" if lemma.inFrenchVocab else "OFV"
-            line="\""+lemma.text+"\","+"\""+lemma.woaccent+"\","+ str(lemma.count)+","+str(lemma.documents_count)+"," \
-                 + idf[0:8]+","+str(lemma.length)+","+"\""+str(lemma.letters)+"\","+str(lemma.letters_number)+"," \
-                 + inFrenchVocab + "," + str(lemma.attractivity) + "," + frequency + "," + str(lemma.precision) + "\n"
-            f.write(line)
-        f.close()
+    def SAVE_TO_FILE(self,file_name:chr,base_dir:chr=None):
+        if base_dir:
+            file_to_open = base_dir + file_name
+        else:
+            file_to_open = self.base_dir + file_name
+        with open(file_to_open,"w",encoding="utf_8") as opened_file:
+            values=[lemma for lemma in self.tokens.values()]
+            values.sort(key=attrgetter('count'),reverse=True)
+            for token in values:
+                idf=str(token.idf)
+                if token.frequency is None:
+                    frequency='None'
+                else:
+                    frequency = str(token.frequency)
+                    frequency=frequency[0:8]
+                # if token.woaccent!='':
+                #     token.letters="".join(set(token.woaccent))
+                inFrenchVocab="IFV" if token.inFrenchVocab else "OFV"
+                line="\""+token.text+"\","+"\""+token.woaccent+"\","+ str(token.count)+","+str(token.documents_count)+"," \
+                     + idf[0:8]+","+str(token.length)+","+"\""+str(token.letters)+"\","+str(token.letters_number)+"," \
+                     + inFrenchVocab + "," + str(token.attractivity) + "," + frequency + "," + str(token.precision) + "\n"
+                opened_file.write(line)
+            opened_file.close()
 
 
     def BUILD_IDF(self,documents_number):
@@ -244,11 +244,15 @@ class asr_dictionary:
                 print(index)
         return True
 
-    def SAVE_SIMILARITY_SEQUENCE(self,file_name):
-        file_to_open = self.base_dir + file_name
+    def SAVE_SIMILARITY_SEQUENCE(self,file_name:str,base_dir:str=None):
+        if base_dir:
+            file_to_open = base_dir + file_name
+        else:
+            file_to_open = self.base_dir + file_name
         try:
             ligne=self.similarity_sequence.__str__()
-            asr_save_doc(file_to_open,[ligne])
+            # asr_save_doc(file_to_open,[ligne])
+            asr_save_doc(document=[ligne],file_name=file_to_open)
             return True
         except:
             print_log("ERROR: could not save dictionary similarity sequence to file")
@@ -363,13 +367,3 @@ class asr_dictionary:
         with open(file_to_open, "w", encoding="utf_8") as file:
             for line in classes_str:
                 file.write(line)
-
-def asr_trackRuleTarget(dict,word):
-    #fonction récurrente qui retourne c si a->b->c
-    if word not in dict.keys():
-        return word
-    else:
-        if dict[word] in dict.keys():
-            return asr_trackRuleTarget(dict,dict[word])
-        else:
-            return dict[word]

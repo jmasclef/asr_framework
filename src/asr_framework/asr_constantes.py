@@ -1,5 +1,85 @@
 log_file_name="asr_log"
 CTE_VIRTUAL_WORD= "virtualWord"
+from os import cpu_count as os_cpu_count
+"""
+RULES DICTS
+"""
+CTE_FILENAME_STATIC_RULES   =   "asr_static_rules.csv"
+CTE_FILENAME_DYNAMIC_RULES  =   "asr_dynamic_rules.csv"
+"""
+LOGGING
+"""
+from logging import getLogger as logging_getLogger, basicConfig as logging_basicConfig
+logging_basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+asr_logger = logging_getLogger('ASR_LOG')
+from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
+"""
+Définit le seuil de logging: DEBUG, INFO, WARNING, ERROR ou CRITICAL
+Le mode de logging est défini en même temps que le mode de fonctionnement du framework
+En mode debug, le logging est verbeux et l'appli crash sur les erreurs non critiques
+En mode production, le logging est aligné par la valeur de ASR_MODE_PRODUCTION selon INFO, WARNING, ERROR ou CRITICAL
+et les erreurs non critiques ne cessent pas l'exécution de l'appli
+"""
+ASR_MODE_DEBUG      =   DEBUG
+ASR_MODE_PRODUCTION =   INFO
+"""
+MODE DEBUG || PRODUCTION
+"""
+#ASR_MODE doit être défini par le module appelant, à défaut fixe le mode
+ASR_MODE=ASR_MODE_DEBUG
+asr_logger.setLevel(ASR_MODE)
+
+
+
+
+"""
+SECTION PARAMETRES GENSIM
+"""
+intermediate_min_tf_word = 2  # min term freq for plural,accents and gensim
+intermediate_min_df_word = 2  # min doc freq for plural and accents
+final_min_tf_word = 3
+similarity_limit_for_replacement = 0.6  # 0.7 baissé à 0.6
+gensim_model_itermediate_iterations = 7  # default is 5 but can give up to 20% similarity variations
+gensim_model_final_iterations = 10
+"""
+Sur 5 itérations les scores de similarité ont de fortes variations d'un modèle à un autre, jusqu'à 20%...
+Passer à 10 stabilise les variations à l'ordre du 1%
+Passer de 10 à 15 réduit les scores de quelques pourcents (4% constatés)
+"""
+gensim_model_dimension = 300  # (100-1000) 300 is known as a good value, cf standford
+gensim_model_window = 10  # Maximum distance between the current and predicted word within a sentence
+"""
+The size of the context window determines how many words before and after a given word would be included as context
+words of the given word. According to the authors' note, the recommended value is 10 for skip-gram and 5 for CBOW.
+=> Faut il tester avec moins que 10 en supposant que les descriptions professionnelles sont plus condensées et moins rédigées ?
+"""
+gensim_training_algo_skipgram = 1
+gensim_training_algo_cbow = 0
+gensim_training_algo = gensim_training_algo_skipgram  # Training algorithm: 1 for skip-gram; otherwise CBOW
+"""  
+The CBOW architecture predicts the current word based on the context.
+The order of context words does not influence prediction (bag-of-words assumption). 
+In the continuous skip-gram architecture, the model uses the current word to predict the surrounding window of context 
+words. The skip-gram architecture weighs nearby context words more heavily than more distant context words.
+Finally, the Skip-gram architecture works slightly worse on the syntactic task than the CBOW model, and much better on
+the semantic part of the test than all the other models. 
+CBOW éffondre les scores de similarité
+CBOW is faster while skip-gram is slower but does a better job for infrequent words.
+"""
+
+learning_mode_kwargs = {'vector_size': gensim_model_dimension, 'sg': gensim_training_algo,
+                        'window': gensim_model_window,
+                        'min_count': intermediate_min_tf_word, 'workers': os_cpu_count(), 'trim_rule': None,
+                        'epochs': gensim_model_itermediate_iterations}
+final_mode_kwargs = {'vector_size': gensim_model_dimension, 'sg': gensim_training_algo,
+                     'window': gensim_model_window,
+                     'min_count': final_min_tf_word, 'workers': os_cpu_count(), 'trim_rule': None,
+                     'epochs': gensim_model_final_iterations}
+
+example_mode_kwargs = {'vector_size': 100, 'sg': gensim_training_algo,
+                       'window': gensim_model_window,
+                       'min_count': final_min_tf_word, 'workers': os_cpu_count(), 'trim_rule': None,
+                       'epochs': gensim_model_final_iterations }
 
 #39% de stopwords estimés
 BLOCKS_MIN_AUTH_WORDS=8
@@ -42,11 +122,19 @@ SEUIL_HAUT_SCORE_TRES_BON=85
 """
 SECTION CONSTANTES ANALYSE
 """
-RESUME_SECTIONS_MARKUPS = {'asr_eop_asr', 'asr_eol_asr', 'asr_eos_asr', 'asr_deos_asr', '_asr_eol_asr_'}
-MARKUP_EOP = " asr_eop_asr "
-MARKUP_EOL = " asr_eol_asr "
-MARKUP_EOS = " asr_eos_asr "
-MARKUP_DEOS = " asr_deos_asr "
+#les markups fournissent des clés pour un découpage différents des corpus
+#utilisés en tokénisation pour séparer les phrases et les paragrahpes avant un apprentissage
+#il existe trois markups:
+# un pour la fin de le phrase, pour les algos de fenêtre glissante
+# un pour la fin de ligne pour les algos de splitting sémantique des phrases
+# un pour la fin du fichier pour les algos de batch learning
+ASR_MARKUP_LAYOUT = "#ASR_EO{}#"
+MARKUP_EOP  = ASR_MARKUP_LAYOUT.format('P') #fin de phrase, peut remplacer un point (.)
+MARKUP_EOL  = ASR_MARKUP_LAYOUT.format('L') #fin de ligne, peut remplacer un \n
+MARKUP_EOF  = ASR_MARKUP_LAYOUT.format('F') #fin de fichier, peut remplacer une ligne vierge; non utilisé
+
+RESUME_SECTIONS_MARKUPS = { MARKUP_EOP, MARKUP_EOL, MARKUP_EOF }
+
 FRENCH_STOPWORDS_LIST_WO_MARKUPS = {'a', 'abord', 'absolument', 'afin', 'ah', 'ai', 'aie', 'ailleurs', 'ainsi', 'ait',
                                     'allaient', 'allo', 'allons', 'allô', 'alors', 'ans', 'anterieur', 'anterieure',
                                     'anterieures', 'aout', 'août', 'apres', 'après', 'as', 'assez', 'attendu', 'au',
@@ -93,14 +181,14 @@ FRENCH_STOPWORDS_LIST_WO_MARKUPS = {'a', 'abord', 'absolument', 'afin', 'ah', 'a
                                     'ni', 'nombreuses', 'nombreux', 'non', 'nos', 'notamment', 'notre', 'nous',
                                     'nous-mêmes', 'nouveau', 'nov', 'nov.', 'novembre', 'nul', 'néanmoins', 'nôtre',
                                     'nôtres', 'n’', 'o', 'oct', 'oct.', 'octobre', 'oh', 'ohé', 'ollé', 'olé', 'on',
-                                    'ont', 'onze', 'onzième', 'ore', 'ou', 'ouf', 'ouias', 'oust', 'ouste', 'outre',
+                                    'ont', 'onze', 'onzième', 'ore', 'ou', 'ouf', 'oui', 'ouias', 'oust', 'ouste', 'outre',
                                     'ouvert', 'ouverte', 'ouverts', 'où', 'paf', 'pan', 'par', 'parce', 'parfois',
                                     'parle', 'parlent', 'parler', 'parmi', 'parseme', 'partant', 'particulier',
                                     'particulière', 'particulièrement', 'pas', 'passé', 'pendant', 'pense', 'permet',
                                     'personne', 'peu', 'peut', 'peut-être', 'peuvent', 'peux', 'pff', 'pfft', 'pfut',
                                     'pif', 'pire', 'plein', 'plouf', 'plus', 'plusieurs', 'plutôt', 'possessif',
                                     'possessifs', 'possible', 'possibles', 'pouah', 'pour', 'pourquoi', 'pourrais',
-                                    'pourrait', 'pouvait', 'prealable', 'precisement', 'premier', 'première',
+                                    'pourrait', 'pourtant', 'pouvait', 'prealable', 'precisement', 'premier', 'première',
                                     'premièrement', 'pres', 'probable', 'probante', 'procedant', 'proche', 'près',
                                     'psitt', 'pu', 'puis', 'puisque', 'pur', 'pure', "qu'", 'quand', 'quant',
                                     'quant-à-soi', 'quanta', 'quarante', 'quatorze', 'quatre', 'quatre-vingt',

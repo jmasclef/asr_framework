@@ -10,7 +10,7 @@ from .asr_constantes import *
 from .asr_dictionary import asr_dictionary,asr_trackRuleTarget
 from .asr_utils import asr_strip_accents
 from .asr_regex_filters import *
-from .asr_tokenisation import asr_filter_stopwords, asr_cleanTokenize_doc
+from .asr_tokenisation import asr_filter_stopwords, asr_cleanTokenize_doc, asr_apply_rules_dict
 asr_similarityLimit_forAggregation=0.5  #score minimum d'aggrégation thématique entre mots pour qu'ils soient associés à un même thème
 
 
@@ -377,34 +377,32 @@ class asr_sentence():
 
     def FILTER(self,filterSectionsMarkups=True,dealWithOOV=True,suggestCorrections=False, justCleanAndStopwords=False):
 
-        def asr_filter_sentence(sentence_to_analyse: list, final_gensim_model, dictionary, filter_section_markups=True,
+        def asr_filter_sentence(sentence_to_analyse: str, final_gensim_model, dictionary, filter_section_markups=True,
                                fill_with_section_markups=False, dealWithOOV=True, justCleanAndStopwords=False):
             # KEY FUNCTION => TRANSFORM ANY TEXT WITH RESPECT TO THE MODEL
 
             # step_TOKENIZE
-            sentence_to_analyse = asr_cleanTokenize_doc(" ".join(sentence_to_analyse), MIN_WORD_LENGTH,
-                                                           export_mails=False,
+            sentence_to_analyse = asr_cleanTokenize_doc(strDoc_or_listOfStrDoc=sentence_to_analyse,
                                                            fill_with_section_markups=fill_with_section_markups)
 
             # step_FILTER_STOPWORDS
             sentence_to_analyse = asr_filter_stopwords(sentence_to_analyse.split(),
                                                       filter_section_markups=filter_section_markups)
 
-            sentence_to_analyse = " ".join(sentence_to_analyse)
-            # correct lost .
-            sentence_to_analyse = sentence_to_analyse.replace('.', ' ')
+            # sentence_to_analyse = " ".join(sentence_to_analyse)
+            # # correct lost .
+            # sentence_to_analyse = sentence_to_analyse.replace('.', ' ')
 
             if justCleanAndStopwords:
-                return (sentence_to_analyse.split(), [])
+                # return (sentence_to_analyse.split(), [])
+                return (sentence_to_analyse, [])
 
             # step APPLY_STATIC_RULES
-            sentence_to_analyse = asr_apply_static_rules(sentence_to_analyse, dictionary)
-
-            sentence_to_analyse = sentence_to_analyse.split()
-
+            sentence_to_analyse = asr_apply_rules_dict(line_of_words_list=sentence_to_analyse,
+                                                       rules_dict=dictionary.static_rules)
             # step APPLY_DYNAMIC_RULES
-            sentence_to_analyse = asr_apply_dynamic_rules(sentence_to_analyse,
-                                                         dictionary)  # ne pas changer en local_dict
+            sentence_to_analyse = asr_apply_rules_dict(line_of_words_list=sentence_to_analyse,
+                                                       rules_dict=dictionary.dynamic_rules)
 
             missing_words_oovmodel = list(set([word for word in sentence_to_analyse
                                                if word not in final_gensim_model.wv
@@ -625,35 +623,6 @@ class asr_sentence():
             self.COMPUTE_TOPICS_CONVERGENCE()
         self.BUILD_SUMUPWORD()
         self.PREPARE_TO_MIGRATE()
-
-
-def asr_apply_static_rules(sentence_to_analyse,asr_dictionary):
-
-    new_sentence=sentence_to_analyse.lower()
-    #trie les clés pour commencer du féminin pluriel et finir au masculin singulier
-    z_to_a_keys=list(asr_dictionary.static_rules.keys())
-    z_to_a_keys.sort(reverse=True)
-    for expr in z_to_a_keys:
-        if expr in new_sentence:
-            new_sentence=new_sentence.replace(expr,asr_dictionary.static_rules[expr])
-
-    return new_sentence
-
-def asr_apply_dynamic_rules(sentence_to_analyse,dictionary):
-
-    changes=dictionary.dynamic_rules
-    search_set=dictionary.dynamic_rules.keys()
-
-    new_sentence=[]
-    # sentence_to_analyse = sentence_to_analyse.split()
-    for word in sentence_to_analyse:
-        if word in search_set:
-            new_sentence.append(changes[word])
-        else:
-            new_sentence.append(word)
-
-    # new_sentence=" ".join(new_sentence)
-    return new_sentence
 
 def asr_dealWithOOV(filtered_sentence:list,oov_sentence:list,final_gensim_model, dictionary,filter_section_markups=True):
     """
@@ -983,6 +952,7 @@ def asr_migrateSentence(sentence_to_change: asr_sentence, reference_sentence: as
         else:
             new_sentence.append(groupeDeclinaisons)
     return new_sentence
+
 def asr_extractBagOfWords(sentence_list, center, window_length):
     start = max(0, (center - int(window_length / 2)))
     stop = min(len(sentence_list) - 1, center + int(window_length / 2))
@@ -1035,16 +1005,6 @@ def asr_addCommonUsesRule(initial,target,dictionary,model):
         dictionary.commonUsesRules_classes[initial]=classes_usage
         print(initial,classes_usage)
 
-def asr_isFrench(resume: str,seuil=10):
-    if not isinstance(resume,str):
-        raise NameError('Entrer une chaine pour asr_isFrench')
-    full_resume =resume.split()
-    if len(full_resume)==0:
-        score=0
-    else:
-        extract_sw=[word for word in full_resume if word in FRENCH_STOPWORDS_LIST_WO_MARKUPS]
-        score=100*len(extract_sw)/len(full_resume)
-    return score
 
 def asr_extractThemesFromSentence(sentence:asr_sentence,themesVirtualModel:gensim.models.Word2Vec):
     if sentence.topics.__len__()==0:
