@@ -1,7 +1,7 @@
 import unittest
+from unicodedata import category as unicodedata_category, normalize as unicodedata_normalize
 from asr_framework.asr_constantes import *
 from asr_framework.asr_regex_filters import *
-
 asr_cleanRule_replaceWithSectionsMarkups = [
     # ATTENTION A L'ORDRE DES TRANSFORMATIONS!!! TOUS LES DOUBLONS EN PREMIERS PUIS LES COMPOSES
     ("...", MARKUP_EOP), (".\n", MARKUP_EOL), ("\n", MARKUP_EOL), (".", MARKUP_EOP), ("…", MARKUP_EOP),
@@ -12,6 +12,7 @@ asr_cleanRule_replaceWithSectionsMarkups = [
 #Ici on remplace ce qui sera supprimé par ce qui sera gardé
 asr_cleanRule_replace = [
     ("’", "'"), ("´", "'"), ("‘", "'"), ("''", "'"), #toutes les formes d'apostrophe sont simpifiées
+    ("–","-"),
     ("œ", "oe"), ("æ", "ae"),                       #les ligatures sont simpifiées
     ("\\n", "\n"), ("\r", "\n"), ("\u2029", "\n"), ("\u2028", "\n"), ("\x85", "\n"), ("\x1e", "\n"), ("\x1d", "\n"),
     ("-\n", "\n"), ("&\n", "\n"),   #troncages de fin de ligne
@@ -68,7 +69,10 @@ def asr_tokenize_string(input_string:str, split_in_sections_with_markups:bool=Fa
 
     #STEP 7 - Filtre les mots, jette
     output_words_list = asr_cleanDrop_list(input_string=futur_output_string)
-
+    if 'cid' in set(output_words_list):
+        print("CID trouvé dans {}".format(input_string))
+    # if "20072010" in output_words_list:
+    #     print("Ici)")
     return output_words_list
 
 def asr_filterExpressionsWithPunctuations( input_string:str )->str:
@@ -77,22 +81,35 @@ def asr_filterExpressionsWithPunctuations( input_string:str )->str:
     :param input_string: un document constitué d'une chaîne de caractère complète, non splitée
     :return: un document constitué d'une chaîne de caractère complète, non splitée
     """
+    regex_sub_list= [ asr_regex_isValidEmailAdress, asr_regex_cid, asr_regex_https, asr_regex_www ]
     input_list = input_string.split()
     futur_output_list = []
     for word in input_list:
-        if "@" in word and asr_regex_isValidEmailAdress.sub("", word) == '':
-            # C'est une adresse mail: drop
-            continue
-        else:
-            try:
-                if word[:4] == "www." or word[:8] == "https://"  or word[:7] == "http://" or word[:4] == "cid:":
-                    # C'est une URL ou un CID: drop
-                    continue
-                else:
-                    futur_output_list.append(word)
-            except:
-                # Mot trop court donc non et passe au finally
-                futur_output_list.append(word)
+        results = [ regex_sub.sub('',word) for regex_sub in regex_sub_list]
+        if set(results)=={word}:
+            futur_output_list.append(word)
+        # for regex_filter_function in regex_filter_functions:
+        #     if regex_filter_function(word) != word:
+        #         continue
+        # if asr_regex_cid.sub("", word) != word:
+        #     #c'est un cid[**]
+        #     continue
+        # futur_output_list.append(word)
+        # if "@" in word and asr_regex_isValidEmailAdress.sub("", word) != word:
+        #     # C'est une adresse mail: drop
+        #     continue
+        # if asr_regex_cid.sub("", word) != word:
+        #     #c'est un cid[**]
+        #     continue
+        # try:
+        #     if word[:4] == "www." or word[:8] == "https://"  or word[:7] == "http://" or word[:4] == "cid:":
+        #         # C'est une URL ou un CID: drop
+        #         continue
+        #     else:
+        #         futur_output_list.append(word)
+        # except:
+        #     # Mot trop court donc non et passe au finally
+        #     futur_output_list.append(word)
     return " ".join(futur_output_list)
 
 def asr_characterSubstitution ( input_string:str )->str:
@@ -162,9 +179,13 @@ def asr_cleanDrop_list(input_string: str)->list[str]:
     Retire les extrémités parmi -'& de façon récursive
     Retire les calculs, les nombres purs ou commençants par #
     Ne conserve que les caractères acceptés par asr_regex_keepFilteredCharacters
+
     :param input_string: une chaîne de caractère complète, non splitée
     :return: une liste de mots
     """
+    # La longueur moyenne d’un mot est de 4,8 caractères.
+    # Le mot médian a une longueur de 4 caractères.
+    # Moins de 5% des mots ont plus de 10 caractères
     intput_words_list = asr_regex_toBlank.sub(" ",input_string).split()
     output_words_list = []
 
@@ -200,21 +221,35 @@ def asr_cleanDrop_list(input_string: str)->list[str]:
         except:
             pass
 
-        if asr_regex_keepOnlyNumbers.sub("", word) == word:
-            # c'est un nombre pur
-            continue
         if asr_regex_plushashtagnumber.sub("", word) == '':
             # c'est un mot du type #33 ou +45 etc
             continue
         if asr_regex_keepCalculus.sub("", word) == '':
             # c'est un nombre ou un calcul (-12.3+(54*5))=10ee4
             continue
+
         word = asr_regex_keepFilteredCharacters.sub("", word)  # ne garde que les lettres, chiffres et qlq caracteres
         # word_keepOnlyLetters = asr_regex_keepOnlytLetters.sub("", word)
+
+        only_numbers_str= asr_regex_keepOnlyNumbers.sub("", word)
+        if only_numbers_str == word:
+            # c'est un nombre pur
+            continue
+
+        if (len(word)>10) and (2*len(only_numbers_str)>len(word)) :
+            asr_logger.info("Abandon du mot {}".format(word))
+            #C'est un mot de plus de 10 digits dont plus de la moitié sont des chiffres -> poubelle
+            #RT-2012, iso50001 ok
+            continue
+
         if len(word) < MIN_WORD_LENGTH:
             continue
         elif len(set(word))==1 and len(word)>4: # c'est un mot de 5 lettres constitué d'une répétition d'une seule lettre aaaaa xxxxx
             continue
+
+        if (len(word)>10) and ( (extract_word:=asr_correct_letters_doubled(word)) !=word):
+            asr_logger.info("Remplacement de {} par {}".format(word,extract_word))
+            word=extract_word
 
 
         # if asr_regex_cid.sub('', word)=='':  # c'est un CID résidu d'un extract PDF
@@ -293,9 +328,10 @@ def asr_isComposedWithStopwordsOrNumbers(word:str)->bool:
     return areStopWords
 
 
-def asr_isFrench(document_as_string: str,ratio_seuil=None)->float:
+def asr_isFrench(document_as_string: str,floor_ratio=None)->float:
     """
     Retourne un ratio de stopwords français dans le texte ou un booleen, indicateur de document français
+    Sur quelques essais, il ressort une moyenne de 39% de stopwords dans une phrase française
     :param document_as_string: string car opération avant la tokenisation
     :param ratio_seuil: si None, la fonction retourne un score sous forme de float, sinon un booleen
     :return: booleen si seuil est défini sinon ratio
@@ -308,14 +344,31 @@ def asr_isFrench(document_as_string: str,ratio_seuil=None)->float:
     line_of_words_list = document_as_string.lower().split() #supprime les double blanks courants en texte brut et filtré
 
     if len(line_of_words_list)==0:
-        score=0
+        ratio=0
     else:
         extract_sw=[word for word in line_of_words_list if word in FRENCH_STOPWORDS_LIST_WO_MARKUPS]
         ratio=len(extract_sw)/len(line_of_words_list)
-    if ratio_seuil:
-        return True if ratio>ratio_seuil else False
+    if floor_ratio:
+        return True if ratio>floor_ratio else False
     else:
         return ratio
+
+def asr_strip_accents(word):
+    return ''.join(c for c in unicodedata_normalize('NFD', word) if unicodedata_category(c) != 'Mn')
+
+def asr_correct_letters_doubled(word):
+    if word.__len__() < 8:
+        return word
+    n_word=word
+    n_word_sub=n_word[::2]
+    while ("".join([lettre*2 for lettre in list(n_word_sub)]) == n_word):
+        n_word=n_word_sub
+        n_word_sub = n_word[::2]
+    n_word_sub=n_word[::3]
+    while ("".join([lettre*3 for lettre in list(n_word_sub)]) == n_word):
+        n_word=n_word_sub
+        n_word_sub = n_word[::3]
+    return n_word
 
 class test_asr_tokenisation_methods(unittest.TestCase):
 
@@ -325,7 +378,7 @@ class test_asr_tokenisation_methods(unittest.TestCase):
 
     def test_asr_isFrench(self):
         self.assertEqual(asr_isFrench('Voici bien du français pourtant'),0.8)
-        self.assertTrue(asr_isFrench('Voici bien du français pourtant',ratio_seuil=0.5))
+        self.assertTrue(asr_isFrench('Voici bien du français pourtant',floor_ratio=0.5))
 
     def test_asr_filter_stopwords(self):
         self.assertEqual(asr_filter_stopwords('Voici bien du français pourtant'.split()),['français'])
@@ -339,6 +392,9 @@ class test_asr_tokenisation_methods(unittest.TestCase):
                          ['il', 'il', 'ai', 'as', 'abord', 'est', 'est', 'ont'])
         self.assertEqual(asr_cleanDrop_list('a 345 12.34 12,34 2*(4+3)=14 c++ c#'),['c++', 'c#'])
         self.assertEqual(asr_cleanDrop_list('(pp, mm, sd)'),['pp', 'mm', 'sd'])
+        self.assertEqual(asr_cleanDrop_list('fffooorrrmmmaaatttiiiooonnn'),['formation'])
+        self.assertEqual(asr_cleanDrop_list('___________'),[])
+        self.assertEqual(asr_cleanDrop_list('eric-256484'),[])
 
     def test_asr_isolatePunctuations(self):
         self.assertEqual(asr_isolatePunctuations("bon, alors? écoute: ça va. si.non; je le dirai!"),

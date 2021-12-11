@@ -4,8 +4,10 @@ from os import cpu_count as os_cpu_count
 """
 RULES DICTS
 """
-CTE_FILENAME_STATIC_RULES   =   "asr_static_rules.csv"
-CTE_FILENAME_DYNAMIC_RULES  =   "asr_dynamic_rules.csv"
+CTE_FILENAME_STATIC_RULES   =   "static_rules.csv"
+CTE_FILENAME_DYNAMIC_RULES  =   "dynamic_rules.csv"
+# CTE_FILENAME_STATIC_RULES   =   "asr_static_rules.csv"
+# CTE_FILENAME_DYNAMIC_RULES  =   "asr_dynamic_rules.csv"
 """
 LOGGING
 """
@@ -35,7 +37,7 @@ asr_logger.setLevel(ASR_MODE)
 """
 SECTION PARAMETRES GENSIM
 """
-intermediate_min_tf_word = 2  # min term freq for plural,accents and gensim
+intermediate_min_tf_word = 3  # min term freq for plural,accents and gensim
 intermediate_min_df_word = 2  # min doc freq for plural and accents
 final_min_tf_word = 3
 similarity_limit_for_replacement = 0.6  # 0.7 baissé à 0.6

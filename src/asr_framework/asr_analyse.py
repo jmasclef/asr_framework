@@ -7,10 +7,10 @@ import pandas
 import gensim
 
 from .asr_constantes import *
-from .asr_dictionary import asr_dictionary,asr_trackRuleTarget
-from .asr_utils import asr_strip_accents
+from .asr_dictionary import asr_dictionary
 from .asr_regex_filters import *
-from .asr_tokenisation import asr_filter_stopwords, asr_cleanTokenize_doc, asr_apply_rules_dict
+from .asr_tokenisation import asr_filter_stopwords, asr_tokenize_string,  asr_strip_accents
+from .asr_rules_dict import asr_apply_rules_dict, asr_trackRuleTarget
 asr_similarityLimit_forAggregation=0.5  #score minimum d'aggrégation thématique entre mots pour qu'ils soient associés à un même thème
 
 
@@ -98,7 +98,8 @@ class asr_sentence():
             if sentence is None:
                 self.original = None
             else:
-                self.original=str(sentence).lower().split()
+                self.original=str(sentence).lower()
+                # self.original=str(sentence).lower().split()
         self.justCleanAndStopwords = []
         self.inTheVocabulary=[]
         self.outOfVocabulary=[]
@@ -375,19 +376,17 @@ class asr_sentence():
         return result
 
 
-    def FILTER(self,filterSectionsMarkups=True,dealWithOOV=True,suggestCorrections=False, justCleanAndStopwords=False):
+    def FILTER(self,split_in_sections_with_markups=False,dealWithOOV=True,suggestCorrections=False, justCleanAndStopwords=False):
 
         def asr_filter_sentence(sentence_to_analyse: str, final_gensim_model, dictionary, filter_section_markups=True,
-                               fill_with_section_markups=False, dealWithOOV=True, justCleanAndStopwords=False):
+                               split_in_sections_with_markups=False, dealWithOOV=True, justCleanAndStopwords=False):
             # KEY FUNCTION => TRANSFORM ANY TEXT WITH RESPECT TO THE MODEL
 
             # step_TOKENIZE
-            sentence_to_analyse = asr_cleanTokenize_doc(strDoc_or_listOfStrDoc=sentence_to_analyse,
-                                                           fill_with_section_markups=fill_with_section_markups)
+            tokenized_sentence = asr_tokenize_string(input_string=sentence_to_analyse,split_in_sections_with_markups=split_in_sections_with_markups)
 
             # step_FILTER_STOPWORDS
-            sentence_to_analyse = asr_filter_stopwords(sentence_to_analyse.split(),
-                                                      filter_section_markups=filter_section_markups)
+            filtered_tokenized_sentence = asr_filter_stopwords(tokenized_sentence, filter_section_markups=(not split_in_sections_with_markups))
 
             # sentence_to_analyse = " ".join(sentence_to_analyse)
             # # correct lost .
@@ -395,29 +394,29 @@ class asr_sentence():
 
             if justCleanAndStopwords:
                 # return (sentence_to_analyse.split(), [])
-                return (sentence_to_analyse, [])
+                return (filtered_tokenized_sentence, [])
 
             # step APPLY_STATIC_RULES
-            sentence_to_analyse = asr_apply_rules_dict(line_of_words_list=sentence_to_analyse,
+            filtered_tokenized_sentence = asr_apply_rules_dict(line_of_words_list=filtered_tokenized_sentence,
                                                        rules_dict=dictionary.static_rules)
             # step APPLY_DYNAMIC_RULES
-            sentence_to_analyse = asr_apply_rules_dict(line_of_words_list=sentence_to_analyse,
+            filtered_tokenized_sentence = asr_apply_rules_dict(line_of_words_list=filtered_tokenized_sentence,
                                                        rules_dict=dictionary.dynamic_rules)
 
-            missing_words_oovmodel = list(set([word for word in sentence_to_analyse
+            missing_words_oovmodel = list(set([word for word in filtered_tokenized_sentence
                                                if word not in final_gensim_model.wv
                                                # if word not in final_gensim_model.wv
                                                and word not in FRENCH_STOPWORDS_LIST_W_MARKUPS]))
 
             if dealWithOOV:
-                sentence_to_analyse, missing_words_oovmodel = asr_dealWithOOV(sentence_to_analyse,
+                sentence_to_analyse, missing_words_oovmodel = asr_dealWithOOV(filtered_tokenized_sentence,
                                                                              missing_words_oovmodel,
                                                                              final_gensim_model, dictionary)
 
-            if filter_section_markups:
-                new_sentence = [word for word in sentence_to_analyse if word in final_gensim_model.wv]
+            if not split_in_sections_with_markups:
+                new_sentence = [word for word in filtered_tokenized_sentence if word in final_gensim_model.wv]
             else:
-                new_sentence = [word for word in sentence_to_analyse if
+                new_sentence = [word for word in filtered_tokenized_sentence if
                                 ((word in final_gensim_model.wv) or (word in RESUME_SECTIONS_MARKUPS))]
 
             # new_sentence = " ".join(new_sentence)
@@ -432,7 +431,7 @@ class asr_sentence():
             if self.dictionary is not None and self.dictionary.dynamic_rules_loaded == False:
                 raise NameError('Dictionary must have loaded its dynamic rules')
             (self.inTheVocabulary, self.outOfVocabulary) = asr_filter_sentence(self.original, self.model, self.dictionary,
-                                        filter_section_markups=filterSectionsMarkups,
+                                        split_in_sections_with_markups=split_in_sections_with_markups,
                                         dealWithOOV=dealWithOOV,justCleanAndStopwords=justCleanAndStopwords)
             if suggestCorrections:
                 self.SUGGEST_OOV_CORRECTIONS()
@@ -684,8 +683,9 @@ def asr_dealWithOOV(filtered_sentence:list,oov_sentence:list,final_gensim_model,
     # new_sentence = " ".join(new_sentence)
     return (new_sentence,missing_words_oovmodel)
 
-def asr_classeUsage(mots,fmodel,dictionary,score_limit_aggregation=asr_similarityLimit_forAggregation,min_group_size=3,similarity_window_width=0.2, break_wo_polysemy=False, logging=False, max_words_scan=200):
+def asr_classeUsage(target,fmodel,dictionary,score_limit_aggregation=asr_similarityLimit_forAggregation,min_group_size=3,similarity_window_width=0.2, break_wo_polysemy=False, logging=False, max_words_scan=200):
     words_list=[]
+    mots=target
     if not isinstance(mots,list):
         mots=mots.split()   #trasnforme en tableau
     for mot in mots:
@@ -706,7 +706,7 @@ def asr_classeUsage(mots,fmodel,dictionary,score_limit_aggregation=asr_similarit
         print(len(words_list),words_list)
     #a créé la liste des most_similaires
     if len(words_list)==0:
-        return []
+        return [], target
 
     #prend le mot le plus similaire à l'entrée
     if len(mots)==1:
@@ -725,6 +725,8 @@ def asr_classeUsage(mots,fmodel,dictionary,score_limit_aggregation=asr_similarit
     while len(words_list)>0:
         #reordonne la liste par similarité un-à-un
         next_word=fmodel.wv.most_similar_to_given(word,words_list)
+        if dictionary.FIND(word) is None:
+            print(word)
         if dictionary.FIND(word).count>1:
             next_similarity = fmodel.wv.n_similarity(groupe, [next_word])
             if next_similarity<score_limit_aggregation:
@@ -749,7 +751,7 @@ def asr_classeUsage(mots,fmodel,dictionary,score_limit_aggregation=asr_similarit
     #evalue les similarités entre les groupes, selon le score de sim, fusionne les groupes
     new_groupes=[]
     if len(groupes)==0:
-        return []
+        return [], target
     # #ETUDIE L'AGGREGATION DES GROUPES ENTRE EUX
     # while len(groupes)>0:
     #     groupe_repere = groupes[0]
@@ -813,7 +815,7 @@ def asr_classeUsage(mots,fmodel,dictionary,score_limit_aggregation=asr_similarit
             groupe=groupes_test.pop()
             # groupes_test.remove(groupe)
         if not polysemy:
-            return []
+            return [], target
 
     #trouve une étiquette aux groupes
     # polysemy_groups=[]
@@ -824,7 +826,7 @@ def asr_classeUsage(mots,fmodel,dictionary,score_limit_aggregation=asr_similarit
     #     titre = fmodel.wv.most_similar_to_given(centre,groupe)
     #     polysemy_groups.append([titre,groupe])
 
-    return groupes
+    return groupes, target
 
 def asr_migrateSentencePreparation(sentence_to_change: list, dictionary: asr_dictionary, model: gensim.models.Word2Vec):
     window_length_step1 = 2

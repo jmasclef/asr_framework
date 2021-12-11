@@ -180,14 +180,23 @@ def mp_load_list(file_name:str,encoding_value="utf-8"):
         #     result.append(line)
     return result
 
-def asr_scan_folder(extension=".txt",base_dir="."):
-    list = []
-    for root, dirs, files in os_walk(base_dir):
-        for filename in files:
-            if filename.endswith(extension):
-                t = os_path.join(base_dir, filename)
-                list.append(t)
-    return list
+def asr_scan_folder(extension:str=".txt",base_dir:str=".")->list:
+    # list = []
+    # for root, dirs, files in os_walk(base_dir):
+    #     for filename in files:
+    #         if filename.endswith(extension):
+    #             t = os_path.join(base_dir, filename)
+    #             list.append(t)
+    files_list=[]
+    abs_base_dir=os_path.abspath(base_dir)
+    for root, dirs, files in os_walk(abs_base_dir):
+        for file_name in files:
+            if root==abs_base_dir:
+                files_list.append(file_name)
+            else:
+                # rep=os_path.normpath(root)
+                files_list.append(os_path.join(root, file_name))
+    return files_list
 
 class test_asr_persistent_methods(unittest.TestCase):
     def setUp(self):

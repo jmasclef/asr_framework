@@ -8,7 +8,7 @@ from math import log
 from numpy import linalg
 
 from asr_framework.asr_constantes import *
-from asr_framework.asr_utils import asr_strip_accents
+from asr_framework.asr_tokenisation import asr_strip_accents
 from asr_framework.asr_persistent import asr_load_csv_rules, asr_save_doc
 asr_similarityLimit_forAttractivity=0.6
 
@@ -95,22 +95,18 @@ class asr_dictionary:
 
         if base_dir is None:
             # self.base_dir=os.path.basename(os.getcwd())
-            self.base_dir=os.getcwd() + "\\"
+            self.base_dir=os.getcwd() + "/"
         else:
-            if base_dir[-1]=="\\":
-                self.base_dir = base_dir
-            else:
-                self.base_dir = base_dir + "\\"
+            if base_dir[-1]!= "/":
+                self.base_dir =base_dir+ "/"
 
         if file_name is None:
             return
 
-        file_to_open=self.base_dir+file_name
+        file_to_open=os.path.join(self.base_dir,file_name)
         with open(file_to_open, newline='\n',encoding="utf-8") as csvfile:
             csv_dict = csv.reader(csvfile, delimiter=',', quotechar='\"')
             for line in csv_dict:
-                if line[0][0]=="#":
-                    continue
                 new_token=asr_token(line[0],load_full_data=True)
                 new_token.woaccent=line[1]
                 new_token.count=int(line[2])
@@ -319,26 +315,26 @@ class asr_dictionary:
         echantillon= [ mot for mot,score in echantillon if score>=0.75]
         return echantillon
 
-    def LOAD_COMMON_USE_CLASSES(self):
+    def LOAD_COMMON_USE_CLASSES(self,quotechar='%'):
         self.commonUsesRules_map=dict()
         self.commonUsesRules_classes = dict()
         file_to_open = self.base_dir + "commonUsesRules_map.csv"
         with open(file_to_open, newline='\n', encoding="utf-8") as csvfile:
-            csv_dict = csv.reader(csvfile, delimiter='|', quotechar='#')
+            csv_dict = csv.reader(csvfile, delimiter='|', quotechar=quotechar)
             for line in csv_dict:
                 initial=line[0]
                 target_set=eval(line[1])
                 self.commonUsesRules_map[initial]=target_set
         file_to_open = self.base_dir + "commonUsesRules_classes.csv"
         with open(file_to_open, newline='\n', encoding="utf-8") as csvfile:
-            csv_dict = csv.reader(csvfile, delimiter='|', quotechar='#')
+            csv_dict = csv.reader(csvfile, delimiter='|', quotechar=quotechar)
             for line in csv_dict:
                 target=line[0]
                 classes=eval(line[1])
                 self.commonUsesRules_classes[target]=classes
         self.commonUsesRules_loaded = True
 
-    def SAVE_COMMON_USES_CLASSES(self):
+    def SAVE_COMMON_USES_CLASSES(self,quotechar='%'):
         if self.commonUsesRules_loaded==False:
             print("Won't save common uses classes rules: no rule to save, first load or create.")
             return
@@ -354,14 +350,14 @@ class asr_dictionary:
             if len(self.commonUsesRules_map[initial]) == 0:
                 self.commonUsesRules_map.pop(initial)  # si certains sets finissent vides: supprime les
 
-        map_str = ["#" + initial + "#|#" + str(self.commonUsesRules_map[initial]) + "#\n" for initial in self.commonUsesRules_map.keys()]
+        map_str = [quotechar + initial + quotechar+"|"+quotechar + str(self.commonUsesRules_map[initial]) + quotechar+"\n" for initial in self.commonUsesRules_map.keys()]
         map_str.sort()
         file_to_open = self.base_dir + "commonUsesRules_map.csv"
         with open(file_to_open, "w", encoding="utf_8") as file:
             for line in map_str:
                 file.write(line)
 
-        classes_str = ["#" + target + "#|#" + str(self.commonUsesRules_classes[target]) + "#\n" for target in self.commonUsesRules_classes.keys()]
+        classes_str = [quotechar + target + quotechar+"|"+quotechar + str(self.commonUsesRules_classes[target]) + quotechar+"\n" for target in self.commonUsesRules_classes.keys()]
         classes_str.sort()
         file_to_open = self.base_dir + "commonUsesRules_classes.csv"
         with open(file_to_open, "w", encoding="utf_8") as file:

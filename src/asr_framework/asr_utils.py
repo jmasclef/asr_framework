@@ -1,4 +1,3 @@
-import unicodedata
 import datetime
 
 from zlib import compress as zlib_compress, decompress as zlib_decompress
@@ -14,24 +13,6 @@ from .asr_constantes import *
 
 def asr_hashString_md5(string:str):
     return hashlib_md5(string.encode()).hexdigest()
-
-def asr_strip_accents(word):
-    return ''.join(c for c in unicodedata.normalize('NFD', word) if unicodedata.category(c) != 'Mn')
-
-def asr_correct_letters_doubled(word):
-    # ne fonctionne pas: "tttaaannnttt"
-    if word.__len__() < 8:
-        return word
-    n_word=word
-    n_word_sub=n_word[::2]
-    while ("".join([lettre*2 for lettre in list(n_word_sub)]) == n_word):
-        n_word=n_word_sub
-        n_word_sub = n_word[::2]
-    n_word_sub=n_word[::3]
-    while ("".join([lettre*3 for lettre in list(n_word_sub)]) == n_word):
-        n_word=n_word_sub
-        n_word_sub = n_word[::3]
-    return n_word
 
 def print_log(str, new=False,double_output=False,file_name=log_file_name):
     timestamp = datetime.datetime.now().strftime("%d/%m/%Y-%X")
