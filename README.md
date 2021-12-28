@@ -17,8 +17,8 @@ https://www.linkedin.com/in/julien-masclef/
 
 ## Dépendances
 
-Gensim
-Pandas
-Requests
-Flask  (pour l'API) avec flask-sqlalchemy et PyJWT
-PyMySQL
+Gensim <br/>
+Pandas <br/>
+Requests <br/>
+Flask  (pour l'API) avec flask-sqlalchemy et PyJWT <br/>
+PyMySQL <br/>
