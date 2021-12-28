@@ -14,3 +14,11 @@ https://github.com/jmasclef/open-data
 **Pour plus d'informations ou pour les demandes spécifiques contacter:**
 
 https://www.linkedin.com/in/julien-masclef/
+
+## Dépendances
+
+Gensim
+Pandas
+Requests
+Flask  (pour l'API) avec flask-sqlalchemy et PyJWT
+PyMySQL
