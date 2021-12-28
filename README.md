@@ -16,8 +16,8 @@ https://github.com/jmasclef/open-data
 https://www.linkedin.com/in/julien-masclef/
 
 ## Dépendances
-
-Gensim <br/>
+Python 3.9  <br/>
+Gensim 4 <br/>
 Pandas <br/>
 Requests <br/>
 Flask  (pour l'API) avec flask-sqlalchemy et PyJWT <br/>
